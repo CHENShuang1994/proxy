@@ -7,6 +7,7 @@ Created on Sat May 07 16:05:17 2016
 import re
 import time
 from socket import *
+import thread
 #class define 
 def recv_timeout(from_socket, to_socket,timeout=2):
     from_socket.setblocking(0)
@@ -46,7 +47,6 @@ def parseHttpHeader(request, header):
     result = re.search(r'Host: (.*)\s{2}', request)
     if(result):
         header.host = result.group(1)
-        print repr(header.host)
     else:
         print "Host in request is null"
     result = re.search(r'(.*)\s{2}', request)
@@ -60,72 +60,59 @@ def parseHttpHeader(request, header):
     if(result):
         header.cookie = result.group(1)
     else:
-        print "Cookie in request is null"
-responsesFile = open("response.txt", 'w')    
+        print "Cookie in request is null"    
+def startNewConnection(threadname, conn):
+    print '----%s----\n' % threadname
+    lockN = thread.allocate_lock()
+    lockN.acquire()
+    global threadn
+    threadn = threadn + 1
+    lockN.release()
+#    lock = thread.allocate_lock()
+#    lock.acquire()
+#    global serverSocket
+#    connectionSocket, addr = serverSocket.accept()
+#    lock.release()
+    httpRequest = conn.recv(recvSize)
+    localHeader = httpHeader()
+    #proxy processing
+    parseHttpHeader(httpRequest, localHeader)
+    try:
+        #print repr(Header.host)
+        proxyClientSocket = socket(AF_INET, SOCK_STREAM)
+        (soc_family, _, _, _, address) = getaddrinfo(localHeader.host, httpPort)[0]     
+        proxyClientSocket.connect(address)        
+        print "Proxy server connect host: %s succeed" % localHeader.host
+        proxyClientSocket.sendall(httpRequest)
+        recv_timeout(proxyClientSocket, conn, 0.5)
+        print "Send to Host %s succeed" % localHeader.host
+        proxyClientSocket.close()
+        conn.close()
+        responsesFile.close()
+    except:
+        print "Connect %s failed" % localHeader.host
+        proxyClientSocket.close()
+        conn.close()
+    lockN.acquire()
+    threadn = threadn - 1
+    lockN.release()
+    print 'exiting thread %s\n' % threadname
+
 #parameter definition
 serverPort = 8080
 httpPort = 80
 recvSize = 8960
-timeout = 10
+maxThreads = 10
+threadn = 0
 #http header
 Header = httpHeader()
 serverSocket = socket(AF_INET, SOCK_STREAM)
 serverSocket.bind(('',serverPort))
-serverSocket.listen(50)
+serverSocket.listen(20)
 print "the proxy server is listening"
 while True:
-    #recv from client
-    connectionSocket, addr = serverSocket.accept()
-    httpRequest = connectionSocket.recv(recvSize)
-    #proxy processing
-    parseHttpHeader(httpRequest, Header)
-    httpResponse = ''
-    try:
-        #print repr(Header.host)
-        #print getaddrinfo(Header.host, httpPort)[0][4]
-        proxyClientSocket = socket(AF_INET, SOCK_STREAM)
-        (soc_family, _, _, _, address) = getaddrinfo(Header.host, httpPort)[0]     
-        print address
-        proxyClientSocket.connect(address)        
-        #proxyClientSocket.connect((Header.host, httpPort))
-        print "Proxy server connect host: %s succeed" % Header.host
-        
-        #print httpRequest
-        #print httpRequest
-        proxyClientSocket.sendall(httpRequest)
-        recv_timeout(proxyClientSocket, connectionSocket)
-        proxyClientSocket.close()
-        connectionSocket.close()
-#        ret = proxyClientSocket.recv(recvSize)
-#        print "Http response", ret
-#        connectionSocket.send(ret)
-#        proxyClientSocket.close()
-#        connectionSocket.close()
-#        begin = time.time()
-#        while (True):
-#            print "beginrecv"
-#            ret = proxyClientSocket.recv() 
-#            print "endrecv"            
-#            if (ret):
-#                print '----'
-#                print ret
-#                print '---'
-#                connectionSocket.send(ret)
-#            else:
-#                print "---------------------------\nhttpResponse send to %s succeed" % Header.host
-#                proxyClientSocket.close()
-#                connectionSocket.close()   
-#                break
-        responsesFile.close()
-        #print httpResponse
-        #print Header    
-        #send back to client
-#        print httpResponse
-#        connectionSocket.sendall(httpResponse
-    except:
-        #assert  (Header.host!='today.hit.edu.cn')
-        print "Connect %s failed" % Header.host
-        proxyClientSocket.close()
-        connectionSocket.close()
-        continue
-responsesFile.close()
+    if (threadn < maxThreads):
+        connectionSocket, addr = serverSocket.accept()
+        thread.start_new_thread(startNewConnection, ('thread '+str(threadn),connectionSocket))
+    else:
+        time.sleep(2)
