@@ -8,6 +8,7 @@ import re
 import time
 from socket import *
 import thread
+import hashlib
 #class define 
 class httpHeader(object):
     def __init__(self, method=None, url=None, cookie=None, host=None):
@@ -42,12 +43,13 @@ def recv_timeout(from_socket, to_socket,timeout=2):
         except:
             pass
     return True
-def cacheFromResponse(from_socket):
+def cacheFromResponse(from_socket, timeout=0.5):
     from_socket.setblocking(0)
     total_data=[];
     data='';
     begin=time.time()
     while 1:
+        #print total_data
     #if you got some data, then break after wait sec
         if total_data and time.time()-begin>timeout:
             break
@@ -99,9 +101,9 @@ def startNewConnection(threadname, conn):
     #-------------------------------------------------
     if (localHeader.url in cache):
         #extract the since-modified-date and forward to destination server and check reponse state
-        print "hit"
-        filename = cache(localHeader.url)[1]
-        date = cache(localHeader.url)[0]
+        print "hit in cache"
+        filename = cache[localHeader.url][1]
+        date = cache[localHeader.url][0]
 #        fp = open(filename, 'r')
 #        content = ''.join(fp.readlines())
 #        close(fp)
@@ -110,7 +112,9 @@ def startNewConnection(threadname, conn):
 #            date = ret.group(1)
 #        else:
 #            print "http Header has no \"If-Modified-Since\" filed\n"
-        modifiedRequest = re.sub(r'If-Modified-Since: (.*)\s{2}', httpRequest, date)
+        modifiedRequest = re.sub(r'If-Modified-Since: (.*)\s{2}', 'If-Modified-Since: '+date+'\r\n', httpRequest)
+        print 'date is %s' % date
+        print 'modifiedRequest is %s\n' % modifiedRequest
         try:
             #print repr(Header.host)
             proxyClientSocket = socket(AF_INET, SOCK_STREAM)
@@ -123,6 +127,7 @@ def startNewConnection(threadname, conn):
             matchResult = re.search(r'.* (.*) ', response)
             #extract the status code             
             statusCode = matchResult.group(1)
+            print "status code is %s" % statusCode
             if (statusCode == "304"):
                 #not modified search in Cache, directly forward it 
                 #set file lock
@@ -149,7 +154,7 @@ def startNewConnection(threadname, conn):
                     #update the date:
                     cache[localHeader.url] = (modifiedDate, filename)
                 else:
-                    print "resoonse content has no \"Last-Modified\" field\n"
+                    print "response content has no \"Last-Modified\" field\n"
            # recv_timeout(proxyClientSocket, conn, 0.5)
             print "Send to Host %s succeed" % localHeader.host
             proxyClientSocket.close()
@@ -170,20 +175,33 @@ def startNewConnection(threadname, conn):
             print "Proxy server connect host: %s succeed" % localHeader.host
             proxyClientSocket.sendall(httpRequest)
             #recv_timeout(proxyClientSocket, conn, 0.5)
+            #print "Before cacheFromResponse"
             content = cacheFromResponse(proxyClientSocket) #can be optimized  
+            #print '---response-----\n%s\n-------------\n' % repr(content)
+            #print "after cacheFromResponse"
             conn.sendall(content)
             reobj = re.search(r'Last-Modified: (.*)\s{2}', content)
             if (reobj):
                 modifiedDate = reobj.group(1)
+                print 'modifiedDate is %s \n' % modifiedDate
                 Flock = thread.allocate_lock()
                 Flock.acquire()
-                fp = open(localHeader.url+'.txt', 'w')
+                #print "before write to file %s.txt" % localHeader.url 
+                filename = hashlib.md5(localHeader.url).hexdigest()+'.txt'
+                fp = open(filename, 'w')
                 fp.write(content)
+                fp.close()
                 Flock.release()
-                cache[localHeader.url] = (modifiedDate, localHeader.url+'.txt')
+                #print "after write to file %s.txt" % localHeader.url         
+                cache[localHeader.url] = (modifiedDate, filename)
             else:
                 print "resoonse content has no \"Last-Modified\" field\n"
             print "Send to Host %s succeed" % localHeader.host
+            proxyClientSocket.close()
+            conn.close()
+        except Exception, e: 
+            print str(e)
+            print "Connect %s failed" % localHeader.host
             proxyClientSocket.close()
             conn.close()
         except:
