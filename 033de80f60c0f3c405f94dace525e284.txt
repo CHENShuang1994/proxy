@@ -1,9 +1,0 @@
-HTTP/1.1 304 Not Modified
-Content-Location: http://today.hit.edu.cn/index.html
-Last-Modified: Mon, 09 May 2016 12:33:59 GMT
-Accept-Ranges: bytes
-ETag: "966b8cfefa9d11:1d7f0"
-Server: Microsoft-IIS/6.0
-X-Powered-By: ASP.NET
-Date: Mon, 09 May 2016 15:07:26 GMT
-
